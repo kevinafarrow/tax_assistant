@@ -57,6 +57,9 @@ sending a receipt is: share photo → Mail → contact → `;rcpt` + any notes �
 
 - **Anthropic**: API key → `ANTHROPIC_API_KEY`. Extraction uses
   `claude-opus-4-8` (≈1.5¢/receipt); override with `ANTHROPIC_MODEL`.
+  To get a remaining-balance estimate in notifications, sync what the Console
+  currently shows with `cli set-balance` once the container is up (see "Cost
+  reporting" below).
 - **Pushover**: your user key → `PUSHOVER_USER_KEY`; create an application
   ("Tax Assistant") → `PUSHOVER_APP_TOKEN`.
 - **healthchecks.io**: create a check with **period 5 minutes, grace 10
@@ -101,6 +104,33 @@ confirmation.
   ```
 - **Duplicates** (same image sent twice) are detected by hash and skipped.
 
+### Cost reporting
+
+Each Pushover confirmation includes what the extraction cost (`· API 1.4¢`,
+computed from the exact token counts the API returns) and a money footer:
+
+```
+💰 Claude: ~$23.18 left · $1.42 lifetime
+```
+
+Anthropic exposes no balance API, so "left" is derived: every call's tokens
+and cost are recorded in the `api_calls` table, and the app subtracts spend
+tracked since your last **balance sync**. Whenever you look the real balance
+up in the Console (e.g. after buying credits, or to correct drift), sync it:
+
+```sh
+docker compose exec tax-assistant python -m tax_assistant.cli set-balance 23.45
+```
+
+`cli costs` prints the full picture any time: lifetime spend, current anchor,
+spend since it, and the remaining estimate. (`CLAUDE_BALANCE_USD` +
+`CLAUDE_BALANCE_AS_OF` in `.env` still work as an anchor; the newest anchor —
+synced or from `.env` — wins.) The estimate covers only this app's calls —
+usage of the same key elsewhere isn't counted until the next sync — and uses
+a built-in price table (`tax_assistant/costs.py`), so re-check it if you
+switch models. Lifetime spend ignores anchors entirely: it is everything this
+tool has spent since cost tracking began.
+
 ## Operations
 
 | Task | Command |
@@ -108,6 +138,8 @@ confirmation.
 | Per-category totals + CSV | `… python -m tax_assistant.cli report [--year YYYY]` |
 | Rebuild ledger from sidecars | `… python -m tax_assistant.cli rebuild-db` |
 | One manual poll | `… python -m tax_assistant.cli poll-once` |
+| Sync Claude balance from Console | `… python -m tax_assistant.cli set-balance 23.45` |
+| API spend + balance estimate | `… python -m tax_assistant.cli costs` |
 | Logs | `docker compose logs -f` |
 
 (`…` = `docker compose exec tax-assistant`)
@@ -124,7 +156,7 @@ All application state lives in two places, both in this directory:
 
 | What | Contains | Notes |
 |---|---|---|
-| `./data/` | Receipt images + JSON sidecars, `quarantine/`, `ledger.db` | The receipts tree with its sidecars is the **source of truth** — each sidecar carries every field including the dedup `sha256`. `ledger.db` is an index rebuildable from the sidecars, except two tables that exist only in the DB: `audit_log` (edit history) and `processed_emails` (processing log + daily-cap counter). |
+| `./data/` | Receipt images + JSON sidecars, `quarantine/`, `ledger.db` | The receipts tree with its sidecars is the **source of truth** — each sidecar carries every field including the dedup `sha256`. `ledger.db` is an index rebuildable from the sidecars, except four tables that exist only in the DB: `audit_log` (edit history), `processed_emails` (processing log + daily-cap counter), and `api_calls` + `balance_anchors` (Claude spend ledger and balance syncs — losing them resets lifetime spend and the remaining-balance estimate; run `cli set-balance` again after restoring a torn snapshot). |
 | `.env` | All secrets: IMAP password, bearer token, Anthropic key, Pushover keys, web password | Gitignored — it is **not** in the repo, so a `git clone` alone won't reproduce the install. |
 
 Nothing in either is tied to the host (no hostnames, IPs, or absolute paths —

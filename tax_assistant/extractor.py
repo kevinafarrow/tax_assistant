@@ -16,6 +16,7 @@ from datetime import date, datetime
 
 import anthropic
 
+from . import costs
 from .categories import CATEGORY_NAMES
 
 log = logging.getLogger(__name__)
@@ -71,6 +72,12 @@ class ExtractionError(Exception):
     """Raised when extraction fails or the result does not validate.
     The attachment is quarantined — retrying would not help."""
 
+    def __init__(self, message: str, cost_usd: float | None = None):
+        super().__init__(message)
+        # Set when the API call itself completed (and was billed) but the
+        # result was unusable, so the notification can still report the cost.
+        self.cost_usd = cost_usd
+
 
 class TransientAPIError(Exception):
     """Raised when the Claude API is temporarily unavailable (network, rate
@@ -101,7 +108,10 @@ def _content_block(payload: bytes, media_type: str) -> dict:
     }
 
 
-def extract(cfg, payload: bytes, media_type: str, subject: str, body: str) -> Extraction:
+def extract(cfg, payload: bytes, media_type: str, subject: str,
+            body: str) -> tuple[Extraction, float | None]:
+    """Extract receipt data. Returns (extraction, estimated API cost in USD —
+    None when the model has no known pricing)."""
     if media_type not in SUPPORTED_MEDIA_TYPES:
         raise ExtractionError(f"unsupported attachment type: {media_type}")
 
@@ -134,20 +144,27 @@ def extract(cfg, payload: bytes, media_type: str, subject: str, body: str) -> Ex
         # A definitive 4xx means this particular request is unprocessable.
         raise ExtractionError(f"API rejected request ({exc.status_code}): {exc.message}") from exc
 
-    if response.stop_reason == "refusal":
-        raise ExtractionError("model refused the request")
-    if response.stop_reason == "max_tokens":
-        raise ExtractionError("model output truncated (max_tokens)")
+    # The call is billed regardless of whether the result validates below.
+    cost_usd = costs.record_call(cfg, response.model, response.usage)
 
-    text = next((b.text for b in response.content if b.type == "text"), None)
-    if not text:
-        raise ExtractionError("model returned no text content")
     try:
-        data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ExtractionError(f"model output is not valid JSON: {exc}") from exc
+        if response.stop_reason == "refusal":
+            raise ExtractionError("model refused the request")
+        if response.stop_reason == "max_tokens":
+            raise ExtractionError("model output truncated (max_tokens)")
 
-    return _validate(data)
+        text = next((b.text for b in response.content if b.type == "text"), None)
+        if not text:
+            raise ExtractionError("model returned no text content")
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ExtractionError(f"model output is not valid JSON: {exc}") from exc
+
+        return _validate(data), cost_usd
+    except ExtractionError as exc:
+        exc.cost_usd = cost_usd
+        raise
 
 
 def _is_transient(exc: anthropic.APIStatusError) -> bool:

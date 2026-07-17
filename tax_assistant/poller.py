@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 from imap_tools import MailBox
 
-from . import db, gate, storage
+from . import costs, db, gate, storage
 from .extractor import (SUPPORTED_MEDIA_TYPES, Extraction, ExtractionError,
                         TransientAPIError, extract)
 from .notify import hc_ping, pushover
@@ -116,6 +116,15 @@ def _handle_message(cfg, mailbox: MailBox, msg) -> bool:
     with db.connect(cfg.data_dir) as conn:
         db.record_email(conn, message_id, msg.from_, clean_subject, "accepted",
                         " | ".join(lines)[:500])
+    money = []
+    remaining = costs.remaining_balance_usd(cfg)
+    if remaining is not None:
+        money.append(f"~${remaining:.2f} left")
+    lifetime = costs.lifetime_spend_usd(cfg)
+    if lifetime > 0:
+        money.append(f"${lifetime:.2f} lifetime")
+    if money:
+        lines.append("💰 Claude: " + " · ".join(money))
     pushover(cfg, "✅ Receipt email processed", "\n".join(lines) or "(no lines)")
     mailbox.move([msg.uid], cfg.imap_folder_processed)
     return True
@@ -158,18 +167,26 @@ def _process_attachments(cfg, msg, subject: str, body: str, email_meta: dict) ->
                 continue
 
         try:
-            extraction = extract(cfg, payload, att.content_type, subject, body)
+            extraction, cost_usd = extract(cfg, payload, att.content_type, subject, body)
             receipt_date = _resolve_date(extraction, msg)
             storage.store_receipt(cfg.data_dir, payload, att.content_type,
                                   extraction, receipt_date, email_meta)
             date_note = "" if extraction.date else " (date from email)"
             lines.append(f"✅ {extraction.vendor} — ${extraction.amount:.2f} — "
-                         f"{extraction.category} — {receipt_date}{date_note}")
+                         f"{extraction.category} — {receipt_date}{date_note}"
+                         f"{_cost_note(cost_usd)}")
         except ExtractionError as exc:
             storage.quarantine(cfg.data_dir, payload, name, str(exc), email_meta)
-            lines.append(f"🚫 {name}: quarantined — {exc}")
+            lines.append(f"🚫 {name}: quarantined — {exc}{_cost_note(exc.cost_usd)}")
 
     return lines
+
+
+def _cost_note(cost_usd: float | None) -> str:
+    """API cost in cents, so it can't be misread as the receipt amount."""
+    if cost_usd is None:
+        return ""
+    return f" · API {cost_usd * 100:.1f}¢"
 
 
 def _resolve_date(extraction: Extraction, msg) -> str:

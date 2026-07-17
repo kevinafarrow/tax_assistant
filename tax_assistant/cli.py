@@ -4,6 +4,8 @@ Commands:
     report [--year YYYY]   print per-category totals and write report-YYYY.csv
     rebuild-db             rebuild the SQLite ledger from the JSON sidecars
     poll-once              run a single mail poll cycle (no healthcheck ping)
+    set-balance USD        sync the real credit balance from the Anthropic Console
+    costs                  show API spend (lifetime + since last balance sync)
     test-push              send a test Pushover notification
     test-healthcheck       send a success ping to healthchecks.io
 """
@@ -14,7 +16,7 @@ import logging
 import sys
 from datetime import datetime, timezone
 
-from . import config, poller, report, storage
+from . import config, costs, poller, report, storage
 from .notify import hc_ping, pushover
 
 
@@ -51,6 +53,30 @@ def cmd_poll_once(cfg, args) -> int:
     return 0
 
 
+def cmd_set_balance(cfg, args) -> int:
+    if args.usd < 0:
+        print("Balance can't be negative.", file=sys.stderr)
+        return 1
+    costs.sync_balance(cfg, args.usd)
+    print(f"Balance synced: ${args.usd:.2f} as of now. "
+          "Future notifications count spend from this point.")
+    return 0
+
+
+def cmd_costs(cfg, args) -> int:
+    s = costs.summary(cfg)
+    print(f"API calls recorded:   {s['calls']}")
+    print(f"Lifetime spend:       ${s['lifetime_usd']:.4f}")
+    if s["anchor_usd"] is None:
+        print("No balance anchor set — run `set-balance <usd>` with the figure "
+              "from the Anthropic Console to enable the remaining estimate.")
+    else:
+        print(f"Balance anchor:       ${s['anchor_usd']:.2f} (as of {s['anchor_as_of'] or 'the beginning'})")
+        print(f"Spent since anchor:   ${s['spent_since_anchor_usd']:.4f}")
+        print(f"Remaining (estimate): ${s['remaining_usd']:.2f}")
+    return 0
+
+
 def cmd_test_push(cfg, args) -> int:
     ok = pushover(cfg, "Tax assistant test", "If you can read this, Pushover is working. 🎉")
     print("Pushover notification sent." if ok else "Pushover FAILED — check keys/logs.")
@@ -77,6 +103,13 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("rebuild-db", help="rebuild ledger.db from sidecars").set_defaults(func=cmd_rebuild_db)
     sub.add_parser("poll-once", help="run one mail poll cycle").set_defaults(func=cmd_poll_once)
+
+    p_balance = sub.add_parser("set-balance",
+                               help="sync the real credit balance from the Anthropic Console")
+    p_balance.add_argument("usd", type=float, help="balance in USD, e.g. 23.45")
+    p_balance.set_defaults(func=cmd_set_balance)
+
+    sub.add_parser("costs", help="show API spend and balance estimate").set_defaults(func=cmd_costs)
     sub.add_parser("test-push", help="send a test Pushover notification").set_defaults(func=cmd_test_push)
     sub.add_parser("test-healthcheck", help="ping healthchecks.io").set_defaults(func=cmd_test_healthcheck)
 

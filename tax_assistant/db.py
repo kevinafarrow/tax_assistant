@@ -44,6 +44,23 @@ CREATE TABLE IF NOT EXISTS audit_log (
     new_value TEXT NOT NULL,
     changed_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS api_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    model TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cache_creation_input_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_input_tokens INTEGER NOT NULL DEFAULT 0,
+    cost_usd REAL,                 -- NULL when the model had no known pricing
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS balance_anchors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    balance_usd REAL NOT NULL,     -- what the Anthropic Console showed
+    noted_at TEXT NOT NULL         -- when it was synced (cli set-balance)
+);
 """
 
 
@@ -107,6 +124,45 @@ def emails_processed_today(conn: sqlite3.Connection) -> int:
         "SELECT COUNT(*) AS n FROM processed_emails WHERE processed_at >= ?", (today,)
     ).fetchone()
     return row["n"]
+
+
+def record_api_call(conn: sqlite3.Connection, model: str, input_tokens: int,
+                    output_tokens: int, cache_creation_input_tokens: int,
+                    cache_read_input_tokens: int, cost_usd: float | None) -> None:
+    conn.execute(
+        """INSERT INTO api_calls
+           (model, input_tokens, output_tokens, cache_creation_input_tokens,
+            cache_read_input_tokens, cost_usd, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (model, input_tokens, output_tokens, cache_creation_input_tokens,
+         cache_read_input_tokens, cost_usd, now_iso()),
+    )
+
+
+def api_spend_since(conn: sqlite3.Connection, since: str) -> float:
+    """Total recorded API cost since an ISO date/timestamp ('' = all time)."""
+    row = conn.execute(
+        "SELECT COALESCE(SUM(cost_usd), 0) AS total FROM api_calls WHERE created_at >= ?",
+        (since,),
+    ).fetchone()
+    return float(row["total"])
+
+
+def record_balance_anchor(conn: sqlite3.Connection, balance_usd: float) -> None:
+    conn.execute(
+        "INSERT INTO balance_anchors (balance_usd, noted_at) VALUES (?, ?)",
+        (balance_usd, now_iso()),
+    )
+
+
+def latest_balance_anchor(conn: sqlite3.Connection) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT balance_usd, noted_at FROM balance_anchors ORDER BY noted_at DESC, id DESC LIMIT 1"
+    ).fetchone()
+
+
+def api_call_count(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COUNT(*) AS n FROM api_calls").fetchone()["n"]
 
 
 def record_audit(conn: sqlite3.Connection, receipt_id: int, field: str,

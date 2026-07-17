@@ -21,6 +21,10 @@ class Config:
     bearer_token: str
 
     anthropic_model: str
+    # Balance anchor for cost reporting: what the Console said your credit
+    # balance was, and when. None/"" disables the "remaining" figure.
+    claude_balance_usd: float | None
+    claude_balance_as_of: str  # ISO date (YYYY-MM-DD); "" counts all recorded spend
 
     pushover_user_key: str
     pushover_app_token: str
@@ -51,6 +55,10 @@ def load() -> Config:
         allowed_senders=senders,
         bearer_token=env.get("BEARER_TOKEN", ""),
         anthropic_model=env.get("ANTHROPIC_MODEL", "claude-opus-4-8"),
+        claude_balance_usd=(
+            float(env["CLAUDE_BALANCE_USD"]) if env.get("CLAUDE_BALANCE_USD", "").strip() else None
+        ),
+        claude_balance_as_of=env.get("CLAUDE_BALANCE_AS_OF", "").strip(),
         pushover_user_key=env.get("PUSHOVER_USER_KEY", ""),
         pushover_app_token=env.get("PUSHOVER_APP_TOKEN", ""),
         healthchecks_url=env.get("HEALTHCHECKS_URL", "").rstrip("/"),
