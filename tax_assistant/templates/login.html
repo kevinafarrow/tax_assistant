@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tax Assistant — Log in</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 15px/1.5 system-ui, sans-serif; display: grid; place-items: center;
+         min-height: 100vh; margin: 0; background: Canvas; color: CanvasText; }
+  form { display: grid; gap: .75rem; width: min(20rem, 90vw); }
+  input, button { font: inherit; padding: .5rem .6rem; border-radius: 6px;
+                  border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); }
+  button { font-weight: 600; cursor: pointer; }
+  .error { color: #dc2626; }
+</style>
+</head>
+<body>
+<form method="post" action="/login">
+  <h1>🧾 Tax Assistant</h1>
+  {% if error %}<div class="error">{{ error }}</div>{% endif %}
+  <input type="password" name="password" placeholder="Password" autofocus required>
+  <button type="submit">Log in</button>
+</form>
+</body>
+</html>

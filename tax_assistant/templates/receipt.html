@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}{{ r.vendor }} — Tax Assistant{% endblock %}
+{% block content %}
+<p><a href="/year/{{ r.date[:4] }}">← back to {{ r.date[:4] }}</a></p>
+<h1>{{ r.vendor }} — ${{ "%.2f"|format(r.amount) }}</h1>
+
+{% if saved %}<div class="flash">Saved. File and ledger updated.</div>{% endif %}
+{% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+<div class="cols">
+  <div>
+    {% if is_pdf %}
+      <p><a href="/receipt/{{ r.id }}/image">Open PDF receipt ↗</a></p>
+    {% else %}
+      <img class="receipt" src="/receipt/{{ r.id }}/image" alt="receipt image">
+    {% endif %}
+    <p class="muted">
+      From: {{ r.email_from }}<br>
+      Subject: {{ r.email_subject }}<br>
+      Received: {{ r.email_date }}<br>
+      File: {{ r.file_path }}
+    </p>
+    {% if r.email_body %}<details><summary>Email body</summary><pre>{{ r.email_body }}</pre></details>{% endif %}
+  </div>
+
+  <div>
+    <h2>Edit</h2>
+    <form class="edit" method="post" action="/receipt/{{ r.id }}">
+      <label>Vendor <input name="vendor" value="{{ r.vendor }}" required></label>
+      <label>Date <input name="date" type="date" value="{{ r.date }}" required></label>
+      <label>Amount <input name="amount" type="number" step="0.01" min="0.01" value="{{ '%.2f'|format(r.amount) }}" required></label>
+      <label>Category
+        <select name="category">
+          {% for c in categories %}<option value="{{ c }}" {% if c == r.category %}selected{% endif %}>{{ c }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Notes <textarea name="notes" rows="3">{{ r.notes }}</textarea></label>
+      <button type="submit">Save changes</button>
+    </form>
+
+    {% if audit %}
+    <h2>Change history</h2>
+    <table>
+      <tr><th>When</th><th>Field</th><th>From</th><th>To</th></tr>
+      {% for a in audit %}
+      <tr><td class="muted">{{ a.changed_at }}</td><td>{{ a.field }}</td><td>{{ a.old_value }}</td><td>{{ a.new_value }}</td></tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

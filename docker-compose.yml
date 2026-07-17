@@ -1,0 +1,23 @@
+services:
+  tax-assistant:
+    build: .
+    container_name: tax-assistant
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    ports:
+      # Web UI on host port 1040 (like the form). LAN only — never port-forward this.
+      - "1040:1040"
+    volumes:
+      # All state lives on the host disk (gitignored ./data in this repo);
+      # survives reboots and image rebuilds.
+      - ./data:/data
+    # Hardening: outbound-only workload with a single writable mount.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

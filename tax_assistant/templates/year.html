@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ year }} — Tax Assistant{% endblock %}
+{% block content %}
+<h1>{{ year }} <span class="muted">— ${{ "%.2f"|format(grand_total) }} across {{ receipts|length }} receipts</span></h1>
+<p>
+  <a href="/report/{{ year }}.csv">⬇ Download report-{{ year }}.csv</a>
+  {% if quarantine_count %} · <a href="/quarantine" class="warn">⚠ {{ quarantine_count }} item(s) in quarantine</a>{% endif %}
+</p>
+
+{% if totals %}
+<h2>Schedule C totals</h2>
+<table>
+  <tr><th>Line</th><th>Category</th><th class="num">Receipts</th><th class="num">Total</th></tr>
+  {% for t in totals %}
+  <tr>
+    <td class="muted">{{ t.line.split('-')[0] }}</td>
+    <td>{{ t.category }}</td>
+    <td class="num">{{ t.count }}</td>
+    <td class="num">${{ "%.2f"|format(t.total) }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<h2>Receipts</h2>
+{% if receipts %}
+<table>
+  <tr><th>Date</th><th>Vendor</th><th class="num">Amount</th><th>Category</th><th>Notes</th></tr>
+  {% for r in receipts %}
+  <tr>
+    <td><a href="/receipt/{{ r.id }}">{{ r.date }}</a></td>
+    <td><a href="/receipt/{{ r.id }}">{{ r.vendor }}</a></td>
+    <td class="num">${{ "%.2f"|format(r.amount) }}</td>
+    <td><span class="pill">{{ r.category }}</span></td>
+    <td class="muted">{{ r.notes[:80] }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">No receipts for {{ year }} yet.</p>
+{% endif %}
+{% endblock %}

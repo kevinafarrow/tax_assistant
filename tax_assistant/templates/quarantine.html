@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Quarantine — Tax Assistant{% endblock %}
+{% block content %}
+<h1>Quarantine</h1>
+<p class="muted">Items that arrived from you but couldn't be processed. Fix and re-send the
+receipt by email, or inspect the files under <code>data/quarantine/</code> on the host.</p>
+{% if items %}
+<table>
+  <tr><th>When</th><th>File</th><th>Reason</th><th>From email</th></tr>
+  {% for i in items %}
+  <tr>
+    <td class="muted">{{ i.get('quarantined_at', '') }}</td>
+    <td>{{ i.get('original_filename', i.note_file) }}</td>
+    <td class="warn">{{ i.get('reason', '') }}</td>
+    <td class="muted">{{ i.get('email', {}).get('subject', '') }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p class="muted">Nothing in quarantine. 🎉</p>
+{% endif %}
+{% endblock %}
